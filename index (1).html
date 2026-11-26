@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="it"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tiro al Bersaglio 3D</title>
+<style>
+:root{--bg:rgba(8,10,18,.86);--fg:#fff;--card:#1b2133;--acc:#ffb020;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--fg)}
+canvas{display:block;width:100%;height:100%}
+#hud{position:fixed;inset:0;pointer-events:none;display:none}
+#hud .top{position:absolute;top:calc(10px + env(safe-area-inset-top,0px));left:0;right:0;display:flex;justify-content:space-between;padding:0 18px;font-weight:700;font-size:20px;text-shadow:0 2px 4px #000}
+#cross{position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;border:2px solid #fff;border-radius:50%;box-shadow:0 0 4px #000}
+#cross:after{content:"";position:absolute;left:10px;top:10px;width:4px;height:4px;background:#f33;border-radius:50%}
+#cross.hit{border-color:#3f6}#cross.bad{border-color:#f33}
+#flash{position:absolute;inset:0;background:#f00;opacity:0;transition:opacity .35s}
+#ov{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:20px;overflow:auto}
+h1{margin:0;font-size:clamp(26px,5vw,44px);letter-spacing:1px}
+p{margin:0;max-width:560px;line-height:1.45;opacity:.9}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;width:min(640px,100%)}
+button{font:inherit;font-weight:700;color:#fff;background:var(--card);border:2px solid #39425e;border-left-width:8px;border-radius:10px;padding:12px 14px;cursor:pointer;text-align:left}
+button:hover{border-color:var(--acc)}
+button small{display:block;font-weight:400;opacity:.8;margin-top:4px}
+.b{text-align:center;border-left-width:2px;background:var(--acc);color:#111;border-color:var(--acc)}
+.row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+</style></head><body>
+<div id="hud"><div class="top"><span id="tm">0</span><span id="lv"></span><span id="sc">0</span><span id="li"></span></div><div id="cross"></div><div id="flash"></div></div>
+<div id="ov"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const LV=[
+{n:"Poligono di tiro",d:"Facile",time:60,stay:2.4,gap:1.1,inn:.2,sky:0x8fd0ff,fd:.012,gnd:0x4f8a3c,bar:0x9a7648,col:"#4cc35a"},
+{n:"Città al tramonto",d:"Medio",time:50,stay:1.7,gap:.8,inn:.28,sky:0xff9c5a,fd:.014,gnd:0x4a4a52,bar:0x8d8d95,col:"#ffa040"},
+{n:"Notte industriale",d:"Difficile",time:40,stay:1.2,gap:.6,inn:.35,sky:0x070d24,fd:.02,gnd:0x1c232d,bar:0x445060,col:"#4a7dff"},
+{n:"Inferno vulcanico",d:"Estremo",time:30,stay:.8,gap:.42,inn:.4,sky:0x2b0505,fd:.022,gnd:0x1f0e0b,bar:0x3a2a28,col:"#ff3b30"}];
+const R=Math.random,$=id=>document.getElementById(id);
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+document.body.insertBefore(renderer.domElement,document.body.firstChild);
+const scene=new THREE.Scene(),cam=new THREE.PerspectiveCamera(70,1,.1,300);cam.position.set(0,1.7,0);scene.add(cam);
+function rs(){renderer.setSize(innerWidth,innerHeight);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix()}addEventListener("resize",rs);rs();
+const env=new THREE.Group();scene.add(env);
+const M=(g,c,o)=>new THREE.Mesh(g,new THREE.MeshLambertMaterial(Object.assign({color:c},o||{})));
+const BM=(g,c)=>new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:c,fog:false}));
+const slots=[];for(let i=0;i<14;i++){const a=(-65+130*i/13)*Math.PI/180,r=i%2?15:9.5;slots.push({a,r,x:Math.sin(a)*r,z:-Math.cos(a)*r,busy:false})}
+let barriers=[];
+function build(i){
+ env.clear();barriers=[];const L=LV[i];
+ scene.background=new THREE.Color(L.sky);scene.fog=new THREE.FogExp2(L.sky,L.fd);
+ const add=o=>env.add(o);
+ if(i==3){const g=M(new THREE.CircleGeometry(26,40),L.gnd);g.rotation.x=-Math.PI/2;add(g);
+  const lv=BM(new THREE.PlaneGeometry(400,400),0xff4a10);lv.rotation.x=-Math.PI/2;lv.position.y=-.4;add(lv)}
+ else{const g=M(new THREE.PlaneGeometry(300,300),L.gnd);g.rotation.x=-Math.PI/2;add(g)}
+ if(i==0){add(new THREE.HemisphereLight(0xffffff,0x4f8a3c,.95));const d=new THREE.DirectionalLight(0xffffff,.8);d.position.set(10,20,5);add(d);
+  for(let k=0;k<45;k++){const a=R()*6.28,r=24+R()*40,t=new THREE.Group();const tr=M(new THREE.CylinderGeometry(.25,.35,2.5),0x5a3b1e);tr.position.y=1.25;const lf=M(new THREE.ConeGeometry(1.8,5,8),0x2d7a35);lf.position.y=4.5;t.add(tr,lf);t.position.set(Math.sin(a)*r,0,-Math.cos(a)*r);add(t)}
+  for(let k=0;k<7;k++){const m=M(new THREE.ConeGeometry(30,40,6),0x6b8a9a);m.position.set(-90+k*30,15,-110);add(m)}
+  const s=BM(new THREE.SphereGeometry(6,16,16),0xfff3a0);s.position.set(40,70,-120);add(s)}
+ if(i==1){add(new THREE.HemisphereLight(0xffb070,0x333340,.8));const d=new THREE.DirectionalLight(0xff8040,.9);d.position.set(-20,6,-15);add(d);
+  for(let k=0;k<40;k++){const a=R()*6.28,r=28+R()*25,w=6+R()*7,h=10+R()*28,c=new THREE.Color().setHSL(.07,.15,.25+R()*.2);const b=M(new THREE.BoxGeometry(w,h,w),c);b.position.set(Math.sin(a)*r,h/2,-Math.cos(a)*r);add(b);
+   const win=M(new THREE.BoxGeometry(w+.1,h*.5,w+.1),0,{emissive:0xffb040,emissiveIntensity:.35,transparent:true,opacity:.35});win.position.copy(b.position);add(win)}
+  const s=BM(new THREE.SphereGeometry(9,16,16),0xffe0a0);s.position.set(-50,14,-110);add(s)}
+ if(i==2){add(new THREE.AmbientLight(0x334466,.9));const d=new THREE.DirectionalLight(0x7c93d6,.5);d.position.set(10,30,10);add(d);
+  const cs=[0x8a2b2b,0x2b5a8a,0x3a7a4a,0xa07a2b];
+  for(let k=0;k<40;k++){const a=R()*6.28,r=25+R()*25,b=M(new THREE.BoxGeometry(3,2.6,6.5),cs[k%4]);b.position.set(Math.sin(a)*r,1.3+(R()<.4?2.6:0),-Math.cos(a)*r);b.rotation.y=R()*3;add(b)}
+  for(let k=0;k<5;k++){const a=(-70+k*35)*Math.PI/180,x=Math.sin(a)*20,z=-Math.cos(a)*20,p=M(new THREE.CylinderGeometry(.12,.15,7),0x333840);p.position.set(x,3.5,z);add(p);
+   const l=BM(new THREE.SphereGeometry(.4,8,8),0xffe6a8);l.position.set(x,7.2,z);add(l);if(k%2==0){const pl=new THREE.PointLight(0xffd9a0,1.1,34);pl.position.set(x,7,z);add(pl)}}
+  const s=BM(new THREE.SphereGeometry(5,16,16),0xe8eeff);s.position.set(30,60,-110);add(s)}
+ if(i==3){add(new THREE.AmbientLight(0x663322,.9));const p=new THREE.PointLight(0xff4a1a,1.6,70);p.position.set(0,7,-10);add(p);
+  for(let k=0;k<30;k++){const a=R()*6.28,r=28+R()*30,h=8+R()*22,c=M(new THREE.ConeGeometry(2.5+R()*3,h,6),0x2a1a18,{emissive:0x551100,emissiveIntensity:.5});c.position.set(Math.sin(a)*r,h/2-.4,-Math.cos(a)*r);add(c)}
+  for(let k=0;k<5;k++){const v=M(new THREE.ConeGeometry(18,28,10),0x1a0e0c,{emissive:0x771100,emissiveIntensity:.6});v.position.set(-80+k*40,10,-100);add(v)}}
+ slots.forEach(s=>{const b=M(new THREE.BoxGeometry(1.8,.95,.5),L.bar);b.position.set(Math.sin(s.a)*(s.r-.9),.475,-Math.cos(s.a)*(s.r-.9));b.rotation.y=-s.a;add(b);barriers.push(b)})
+}
+// Humanoid
+function human(type){
+ const g=new THREE.Group(),inner=new THREE.Group();g.add(inner);const e=type=="e";
+ const part=(w,h,d,c,x,y,z)=>{const m=M(new THREE.BoxGeometry(w,h,d),c);m.position.set(x,y,z||0);inner.add(m);return m};
+ part(.2,.8,.22,e?0x222222:0x2b4a8a,-.13,.4);part(.2,.8,.22,e?0x222222:0x2b4a8a,.13,.4);
+ part(.5,.65,.28,e?0x9a1c1c:0xf2f2f2,0,1.12);part(.12,.55,.14,e?0x9a1c1c:0xf2f2f2,-.33,1.1);part(.12,.55,.14,e?0x9a1c1c:0xf2f2f2,.33,1.1);
+ const h=M(new THREE.SphereGeometry(.19,12,12),e?0x151515:0xf0c090);h.position.y=1.63;inner.add(h);
+ if(e){part(.24,.05,.02,0xffffff,0,1.65,.17);part(.07,.07,.3,0x111111,.33,1.0,.2)}
+ else{part(.4,.07,.4,0x22aa44,0,1.8)}
+ inner.traverse(m=>{if(m.isMesh)m.userData.tg=g});
+ g.userData={type,inner};return g}
+// State
+let state="menu",paused=false,free=false,lvl=0,L=LV[0],tl=0,sp=0,score=0,strikes=0,shots=0,hits=0,yaw=0,pitch=0,cd=0,rec=0,tg=[];
+const gun=new THREE.Group();gun.add(M(new THREE.BoxGeometry(.06,.09,.34),0x2a2d33));
+const gr=M(new THREE.BoxGeometry(.06,.16,.08),0x1a1c20);gr.position.set(0,-.11,.1);gr.rotation.x=.25;gun.add(gr);
+const mz=BM(new THREE.SphereGeometry(.05,8,8),0xffdd55);mz.position.z=-.22;mz.visible=false;gun.add(mz);
+gun.position.set(.22,-.2,-.5);cam.add(gun);
+let ac;function snd(f,d,t,v){try{ac=ac||new AudioContext();const o=ac.createOscillator(),g=ac.createGain(),n=ac.currentTime;o.type=t;o.frequency.setValueAtTime(f,n);o.frequency.exponentialRampToValueAtTime(40,n+d);g.gain.setValueAtTime(v,n);g.gain.exponentialRampToValueAtTime(.001,n+d);o.connect(g);g.connect(ac.destination);o.start();o.stop(n+d)}catch(e){}}
+function hud(){$("tm").textContent="⏱ "+Math.ceil(Math.max(0,tl))+"s";$("sc").textContent="Punti: "+score;$("li").textContent="♥".repeat(3-strikes)+"♡".repeat(strikes);$("lv").textContent=L.n}
+function menu(){state="menu";$("hud").style.display="none";if(document.pointerLockElement)document.exitPointerLock();
+ $("ov").style.display="flex";$("ov").innerHTML=`<h1>🎯 TIRO AL BERSAGLIO</h1><p>Colpisci i <b style="color:#ff6b6b">banditi (rossi e mascherati)</b>. Non colpire gli <b style="color:#6bff9a">innocenti (camicia bianca e cappello verde)</b>: dopo 3 errori hai perso. Sopravvivi fino allo scadere del tempo per completare il livello.<br>Mouse per mirare, click per sparare, Esc per la pausa.</p><div class="grid">${LV.map((l,i)=>`<button style="border-left-color:${l.col}" onclick="start(${i})">${i+1}. ${l.n}<small>${l.d} · ${l.time} secondi · bersagli ${l.stay}s</small></button>`).join("")}</div>`}
+function start(i){lvl=i;L=LV[i];build(i);tg.forEach(t=>scene.remove(t));tg=[];slots.forEach(s=>s.busy=false);
+ tl=L.time;sp=1;score=0;strikes=0;shots=0;hits=0;yaw=0;pitch=0;paused=false;free=false;state="play";
+ $("ov").style.display="none";$("hud").style.display="block";hud();
+ try{renderer.domElement.requestPointerLock()}catch(e){}
+ setTimeout(()=>{if(!document.pointerLockElement&&state=="play"){free=true;renderer.domElement.style.cursor="none"}},400)}
+function end(win){state="over";if(document.pointerLockElement)document.exitPointerLock();$("hud").style.display="none";
+ const acc=shots?Math.round(hits/shots*100):0;$("ov").style.display="flex";
+ $("ov").innerHTML=`<h1>${win?"✅ LIVELLO COMPLETATO!":"💀 HAI PERSO"}</h1><p>${win?"Hai resistito fino alla fine.":"Hai colpito troppi innocenti."}<br>Punti: <b>${score}</b> · Precisione: <b>${acc}%</b></p><div class="row"><button class="b" onclick="start(${lvl})">Riprova</button>${win&&lvl<3?`<button class="b" onclick="start(${lvl+1})">Livello successivo ▶</button>`:""}<button onclick="menu()">Menu</button></div>`}
+function pause(){paused=true;$("ov").style.display="flex";$("ov").innerHTML=`<h1>⏸ PAUSA</h1><div class="row"><button class="b" onclick="resume()">Continua</button><button onclick="menu()">Menu</button></div>`}
+function resume(){paused=false;$("ov").style.display="none";if(!free)try{renderer.domElement.requestPointerLock()}catch(e){}}
+document.addEventListener("pointerlockchange",()=>{if(!document.pointerLockElement&&state=="play"&&!free)pause()});
+document.addEventListener("pointerlockerror",()=>{if(state=="play"){free=true;renderer.domElement.style.cursor="none"}});
+addEventListener("mousemove",e=>{if(state!="play"||paused)return;
+ if(document.pointerLockElement){yaw=Math.max(-2,Math.min(2,yaw-e.movementX*.0022));pitch=Math.max(-.6,Math.min(.6,pitch-e.movementY*.0022))}
+ else if(free){yaw=-(e.clientX/innerWidth*2-1)*1.5;pitch=-(e.clientY/innerHeight*2-1)*.5}});
+addEventListener("keydown",e=>{if(e.key=="Escape"&&state=="play"&&free&&!paused)pause()});
+addEventListener("mousedown",e=>{if(state=="play"&&!paused&&e.button==0)shoot()});
+const ray=new THREE.Raycaster();
+function flash(c){const f=$("cross");f.className=c;setTimeout(()=>f.className="",150)}
+function shoot(){if(cd>0)return;cd=.18;rec=1;shots++;snd(320,.15,"sawtooth",.18);mz.visible=true;setTimeout(()=>mz.visible=false,50);
+ ray.setFromCamera({x:0,y:0},cam);const objs=barriers.slice();tg.forEach(t=>{if(t.userData.st!="hit")t.userData.inner.traverse(m=>{if(m.isMesh)objs.push(m)})});
+ const h=ray.intersectObjects(objs,false)[0];if(!h||!h.object.userData.tg)return;
+ const t=h.object.userData.tg,u=t.userData;u.st="hit";u.age=0;
+ if(u.type=="e"){score+=100;hits++;snd(900,.1,"square",.1);flash("hit")}
+ else{strikes++;snd(150,.4,"sawtooth",.25);flash("bad");const f=$("flash");f.style.opacity=.5;setTimeout(()=>f.style.opacity=0,60);
+  t.traverse(m=>{if(m.isMesh)m.material.emissive.setHex(0xff0000)});if(strikes>=3){hud();end(false);return}}
+ hud()}
+function spawn(){const free=slots.filter(s=>!s.busy);if(!free.length)return;const s=free[R()*free.length|0];s.busy=true;
+ const t=human(R()<L.inn?"i":"e");t.position.set(s.x,0,s.z);t.rotation.y=Math.atan2(-s.x,-s.z);
+ Object.assign(t.userData,{slot:s,age:0,st:"live"});t.userData.inner.rotation.x=-1.5;scene.add(t);tg.push(t)}
+function tick(dt){tl-=dt;sp-=dt;if(sp<=0){spawn();if(R()<(lvl*.15))spawn();sp=L.gap*(.7+R()*.6)}
+ for(const t of tg.slice()){const u=t.userData;u.age+=dt;let p;
+  if(u.st=="hit"){p=1-Math.min(1,u.age/.18);if(u.age>.2)rem(t)}
+  else{const rise=Math.min(.2,L.stay*.2),fall=.2;if(u.age<rise)p=u.age/rise;else if(u.age<rise+L.stay)p=1;else if(u.age<rise+L.stay+fall)p=1-(u.age-rise-L.stay)/fall;else{rem(t);continue}}
+  u.inner.rotation.x=-(1-p)*1.5}
+ hud();if(tl<=0&&state=="play")end(true)}
+function rem(t){scene.remove(t);t.userData.slot.busy=false;tg=tg.filter(x=>x!=t)}
+const clk=new THREE.Clock();
+(function loop(){requestAnimationFrame(loop);const dt=Math.min(clk.getDelta(),.05);
+ if(state=="play"&&!paused){cd-=dt;tick(dt)}
+ rec=Math.max(0,rec-dt*8);gun.position.z=-.5+rec*.08;gun.rotation.x=rec*.2;
+ cam.rotation.set(pitch,yaw,0,"YXZ");renderer.render(scene,cam)})();
+build(0);menu();
+</script></body></html>
